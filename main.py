@@ -64,11 +64,14 @@ async def chat(message: Message, db: Session = Depends(get_db)):
     messages.append({"role": "user", "content": message.text})
 
     # Odpowiedź z OpenAI
-    response = openai.ChatCompletion.create(
-        model="gpt-4o-mini",
-        messages=messages
-    )
-    reply = response.choices[0].message["content"]
+from openai import OpenAI
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+response = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=messages
+)
+reply = response.choices[0].message.content
 
     # Zapis wiadomości do bazy
     user_msg = models.Message(user_id=user.id, text=message.text, sender="user")
