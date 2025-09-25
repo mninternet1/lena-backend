@@ -2,4 +2,4 @@ fastapi
 uvicorn
 sqlalchemy
 psycopg2-binary
-openai
+openai==0.28
