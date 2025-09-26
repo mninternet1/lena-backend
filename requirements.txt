@@ -4,4 +4,4 @@ sqlalchemy
 psycopg2-binary
 openai>=1.0.0
 passlib[bcrypt]
-
+PyJWT
