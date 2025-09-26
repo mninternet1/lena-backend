@@ -12,6 +12,24 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+# 🔹 Konfiguracja CORS
+origins = [
+    "https://lena-frontend.vercel.app",  # frontend na Vercel
+    "http://localhost:3000"              # lokalne testy
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,          # dozwolone domeny
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # 🔹 Endpoint dla Render healthcheck
 @app.get("/")
 def root():
