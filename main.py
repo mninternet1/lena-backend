@@ -1,49 +1,39 @@
 from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import openai
-import os
-
+from sqlalchemy.orm import Session
 from database import Base, engine, SessionLocal
 import models
-from sqlalchemy.orm import Session
+from openai import OpenAI
+import os
 
-# Tworzymy tabele w bazie (jeśli jeszcze ich nie ma)
+# Tworzymy tabele
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-from fastapi.middleware.cors import CORSMiddleware
-
-app = FastAPI()
-
-# 🔹 Konfiguracja CORS
+# 🔹 CORS – zezwalamy na frontend z Vercel
 origins = [
-    "https://lena-frontend.vercel.app",  # frontend na Vercel
-    "http://localhost:3000"              # lokalne testy
+    "https://lena-frontend.vercel.app",  # produkcja
+    "http://localhost:3000"              # dev lokalny
 ]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,          # dozwolone domeny
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 🔹 Endpoint dla Render healthcheck
-@app.get("/")
-def root():
-    return {"status": "ok", "message": "Lena backend is running 🚀"}
+# 🔹 OpenAI Client
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Klucz API do OpenAI
-openai.api_key = os.getenv("OPENAI_API_KEY")
-
-# Model danych dla wiadomości
+# 🔹 Schemat wiadomości z frontu
 class Message(BaseModel):
     user_id: str
     text: str
 
-# Dependency do bazy
+# 🔹 DB dependency
 def get_db():
     db = SessionLocal()
     try:
@@ -51,9 +41,13 @@ def get_db():
     finally:
         db.close()
 
+@app.get("/")
+def root():
+    return {"status": "ok", "message": "Lena backend działa 🚀"}
+
 @app.post("/chat")
 async def chat(message: Message, db: Session = Depends(get_db)):
-    # Sprawdź, czy użytkownik istnieje
+    # 1. Znajdź lub utwórz usera
     user = db.query(models.User).filter(models.User.user_id == message.user_id).first()
     if not user:
         user = models.User(user_id=message.user_id, name=None)
@@ -61,19 +55,19 @@ async def chat(message: Message, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(user)
 
-    # Historia ostatnich 5 wiadomości
+    # 2. Pobierz historię ostatnich 10 wiadomości
     history = (
         db.query(models.Message)
         .filter(models.Message.user_id == user.id)
         .order_by(models.Message.created_at.desc())
-        .limit(5)
+        .limit(10)
         .all()
     )
     history = list(reversed(history))
 
-    # Budowanie kontekstu rozmowy
+    # 3. Budujemy kontekst rozmowy
     messages = [
-        {"role": "system", "content": "Jesteś Leną, ciepłą i żartobliwą kobietą, pamiętasz użytkownika."}
+        {"role": "system", "content": "Jesteś Leną, ciepłą kobietą, która pamięta użytkownika i jego poprzednie rozmowy."}
     ]
     for h in history:
         role = "user" if h.sender == "user" else "assistant"
@@ -81,13 +75,14 @@ async def chat(message: Message, db: Session = Depends(get_db)):
 
     messages.append({"role": "user", "content": message.text})
 
-    # Odpowiedź z OpenAI
-    response = openai.ChatCompletion.create(
-    model="gpt-4o-mini",
-    messages=messages
+    # 4. Zapytanie do OpenAI
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages
     )
-    reply = response.choices[0].message["content"]
-    # Zapis wiadomości do bazy
+    reply = response.choices[0].message.content
+
+    # 5. Zapisz wiadomości w DB
     user_msg = models.Message(user_id=user.id, text=message.text, sender="user")
     lena_msg = models.Message(user_id=user.id, text=reply, sender="assistant")
     db.add(user_msg)
