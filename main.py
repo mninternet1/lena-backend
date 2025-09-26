@@ -4,18 +4,18 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from database import Base, engine, SessionLocal
 import models
-from openai import OpenAI
 import os
+from openai import OpenAI
 
-# Tworzymy tabele
+# Tworzymy tabele w bazie
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# 🔹 CORS – zezwalamy na frontend z Vercel
+# 🔹 CORS
 origins = [
-    "https://lena-frontend.vercel.app",  # produkcja
-    "http://localhost:3000"              # dev lokalny
+    "https://lena-frontend.vercel.app",
+    "http://localhost:3000"
 ]
 app.add_middleware(
     CORSMiddleware,
@@ -25,10 +25,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🔹 OpenAI Client
+# 🔹 OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# 🔹 Schemat wiadomości z frontu
+# 🔹 Model wiadomości
 class Message(BaseModel):
     user_id: str
     text: str
@@ -55,7 +55,7 @@ async def chat(message: Message, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(user)
 
-    # 2. Pobierz historię ostatnich 10 wiadomości
+    # 2. Pobierz historię
     history = (
         db.query(models.Message)
         .filter(models.Message.user_id == user.id)
@@ -67,7 +67,7 @@ async def chat(message: Message, db: Session = Depends(get_db)):
 
     # 3. Budujemy kontekst rozmowy
     messages = [
-        {"role": "system", "content": "Jesteś Leną, ciepłą kobietą, która pamięta użytkownika i jego poprzednie rozmowy."}
+        {"role": "system", "content": "Jesteś Leną, ciepłą kobietą, pamiętasz użytkownika i jego wcześniejsze rozmowy."}
     ]
     for h in history:
         role = "user" if h.sender == "user" else "assistant"
@@ -75,14 +75,14 @@ async def chat(message: Message, db: Session = Depends(get_db)):
 
     messages.append({"role": "user", "content": message.text})
 
-    # 4. Zapytanie do OpenAI
+    # 4. Zapytanie do OpenAI (NOWE API)
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=messages
     )
     reply = response.choices[0].message.content
 
-    # 5. Zapisz wiadomości w DB
+    # 5. Zapisz wiadomości do bazy
     user_msg = models.Message(user_id=user.id, text=message.text, sender="user")
     lena_msg = models.Message(user_id=user.id, text=reply, sender="assistant")
     db.add(user_msg)
